@@ -1,3 +1,5 @@
+import time
+
 import requests
 import base64
 
@@ -12,52 +14,109 @@ def get_api_key():
     login_bytes = message.encode('ascii')
     base64_bytes_login = base64.b64encode(login_bytes)
     base64_message = base64_bytes_login.decode('ascii')
-    print(base64_message)
-
-    header = {"Authorization": f"Basic {base64_message}"}
-    key_ = requests.post("https://online.moysklad.ru/api/remap/1.2/security/token", headers=header)
-    print(key_)
-    key = 'Bearer ' + key_.json()['access_token']
-    print(key)
-    return key
+    return f'Basic {base64_message}'
 
 
 def get_json():
     url = 'https://online.moysklad.ru/api/remap/1.2/entity/demand'
     headers = {'Authorization': get_api_key()}
     info = requests.get(url=url, headers=headers)
-    print(info.json())
     products = []
     for el in info.json()['rows']:
         date = el['updated']
         data = requests.get(url=el['positions']['meta']['href'], headers=headers)
         assortment = data.json()['rows']
+        counterparty = requests.get(el['agent']['meta']['href'], headers=headers).json()
+        time.sleep(3)
         for el_ in assortment:
-            print(el_)
             assortment_data = requests.get(url=el_['assortment']['meta']['href'], headers=headers)
             assortment_data_json = assortment_data.json()
-            name = assortment_data_json['name']
+            try:
+                name = assortment_data_json['name']
+            except Exception as error:
+                name = '-'
             price = float(el_['price']) / 100
             discount = int(el_['discount'])
             quantity = int(el_['quantity'])
             barcode = assortment_data_json["barcodes"][0]['ean13']
-            code = assortment_data_json['code']
-            article = assortment_data_json['article']
+            try:
+                code = assortment_data_json['code']
+            except Exception as e:
+                code = '-'
+            try:
+                article = assortment_data_json['article']
+            except Exception as e:
+                article = '-'
             final_price = price * quantity * (1 - float(discount / 100))
-
+            counterparty_name = counterparty['name']
             product = {
                 'date': date,
-                'name': name,
+                'product_name': name,
+                'counterparty_name': counterparty_name,
                 'price': price,
                 'discount': discount,
                 'quantity': quantity,
-                'final_price': final_price,
                 'code': code,
                 'article': article,
                 'barcode': barcode,
+                'cash': 0.0,
+                'non_cash': final_price
             }
             products.append(product)
-    print(products)
+            time.sleep(3)
+    time.sleep(10)
+    info = requests.get('https://online.moysklad.ru/api/remap/1.2/entity/retaildemand',
+                        headers=headers)
+
+    for el in info.json()['rows']:
+        date = el['updated']
+        data = requests.get(url=el['positions']['meta']['href'], headers=headers)
+        assortment = data.json()['rows']
+        counterparty = requests.get(el['agent']['meta']['href'], headers=headers).json()
+        cash_sum = el['cashSum']
+        non_cash_sum = el['noCashSum']
+        time.sleep(10)
+        for el_ in assortment:
+            assortment_data = requests.get(url=el_['assortment']['meta']['href'], headers=headers)
+            time.sleep(3)
+            assortment_data_json = assortment_data.json()
+            try:
+                name = assortment_data_json['name']
+            except Exception as error:
+                name = '-'
+
+            price = float(el_['price']) / 100
+            discount = int(el_['discount'])
+            quantity = int(el_['quantity'])
+            barcode = assortment_data_json["barcodes"][0]['ean13']
+            try:
+                code = assortment_data_json['code']
+            except Exception as e:
+                code = '-'
+            try:
+                article = assortment_data_json['article']
+            except Exception as e:
+                article = '-'
+            try:
+                counterparty_name = counterparty['name']
+            except Exception as error:
+                counterparty_name = '-'
+            product = {
+                'date': date,
+                'product_name': name,
+                'counterparty_name': counterparty_name,
+                'price': price,
+                'discount': discount,
+                'quantity': quantity,
+                'code': code,
+                'article': article,
+                'barcode': barcode,
+                'cash': cash_sum,
+                'non_cash': non_cash_sum
+            }
+            products.append(product)
+            time.sleep(3)
+
     return products
 
 
@@ -68,7 +127,8 @@ def check_table(products_json):
 
     products = Table('products', metadata,
                      Column('id', Integer(), primary_key=True),
-                     Column('name', String()),
+                     Column('product_name', String()),
+                     Column('counterparty_name', String()),
                      Column('price', Float()),
                      Column('discount', Integer()),
                      Column('quantity', Integer()),
@@ -76,7 +136,8 @@ def check_table(products_json):
                      Column('code', String()),
                      Column('barcode', String()),
                      Column('article', String()),
-                     Column('final_price', Float()),
+                     Column('cash', String()),
+                     Column('non_cash', String()),
                      )
 
     metadata.create_all(engine)
@@ -84,7 +145,8 @@ def check_table(products_json):
     engine.execute(sql)
     for el in products_json:
         ins = products.insert().values(
-            name=el['name'],
+            product_name=el['product_name'],
+            counterparty_name=el['counterparty_name'],
             price=el['price'],
             discount=el['discount'],
             quantity=el['quantity'],
@@ -92,9 +154,9 @@ def check_table(products_json):
             article=el['article'],
             code=el['code'],
             date=el['date'],
-            final_price=el['final_price'],
+            cash=el['cash'],
+            non_cash=el['non-cash']
         )
-        print(ins)
         conn.execute(ins)
 
 
