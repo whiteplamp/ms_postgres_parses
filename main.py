@@ -1,5 +1,3 @@
-import time
-
 import requests
 import base64
 
@@ -27,7 +25,6 @@ def get_json():
         data = requests.get(url=el['positions']['meta']['href'], headers=headers)
         assortment = data.json()['rows']
         counterparty = requests.get(el['agent']['meta']['href'], headers=headers).json()
-        time.sleep(3)
         for el_ in assortment:
             assortment_data = requests.get(url=el_['assortment']['meta']['href'], headers=headers)
             assortment_data_json = assortment_data.json()
@@ -63,8 +60,6 @@ def get_json():
                 'non_cash': final_price
             }
             products.append(product)
-            time.sleep(3)
-    time.sleep(10)
     info = requests.get('https://online.moysklad.ru/api/remap/1.2/entity/retaildemand',
                         headers=headers)
 
@@ -75,20 +70,20 @@ def get_json():
         counterparty = requests.get(el['agent']['meta']['href'], headers=headers).json()
         cash_sum = el['cashSum']
         non_cash_sum = el['noCashSum']
-        time.sleep(10)
         for el_ in assortment:
+            print(1)
+
             assortment_data = requests.get(url=el_['assortment']['meta']['href'], headers=headers)
-            time.sleep(3)
             assortment_data_json = assortment_data.json()
             try:
                 name = assortment_data_json['name']
+                barcode = assortment_data_json["barcodes"][0]['ean13']
             except Exception as error:
                 name = '-'
-
+                barcode = '-'
             price = float(el_['price']) / 100
             discount = int(el_['discount'])
             quantity = int(el_['quantity'])
-            barcode = assortment_data_json["barcodes"][0]['ean13']
             try:
                 code = assortment_data_json['code']
             except Exception as e:
@@ -115,8 +110,7 @@ def get_json():
                 'non_cash': non_cash_sum
             }
             products.append(product)
-            time.sleep(3)
-
+    print("End of first part")
     return products
 
 
@@ -155,9 +149,10 @@ def check_table(products_json):
             code=el['code'],
             date=el['date'],
             cash=el['cash'],
-            non_cash=el['non-cash']
+            non_cash=el['non_cash']
         )
         conn.execute(ins)
+        print("End of second part")
 
 
 def main():
